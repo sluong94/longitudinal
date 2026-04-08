@@ -1,38 +1,41 @@
 {
-    "_comment": "Variables manually approved for trending despite failing strict auto-matching. Each entry should include a reason for approval. Add variable codes to 'approved' to whitelist them.",
+    "_comment": "Variables manually approved for trending despite failing strict auto-matching. Each entry maps variable_code to approval reason.",
     "approved": {
+        "AI_consumer1r1": "Approved: column in both datasets, binary Yes/No response assumed unchanged",
+        "AI_consumer1r2": "Approved: column in both datasets, binary Yes/No response assumed unchanged",
+        "AI_consumer1r3": "Approved: column in both datasets, binary Yes/No response assumed unchanged",
+        "AI_consumer1r4": "Approved: column in both datasets, binary Yes/No response assumed unchanged",
+        "AI_consumer1r5": "Approved: column in both datasets, binary Yes/No response assumed unchanged",
+        "AI_consumer1r6": "Approved: column in both datasets, binary Yes/No response assumed unchanged",
+        "AI_consumer1r7": "Approved: column in both datasets, binary Yes/No response assumed unchanged",
+        "AI_consumer1r8": "Approved: column in both datasets, binary Yes/No response assumed unchanged",
+        "AI_consumer1r9": "Approved: column in both datasets, binary Yes/No response assumed unchanged",
+        "AI_consumer1r10": "Approved: column in both datasets, binary Yes/No response assumed unchanged",
+        "AI_workforcenew1r1": "Approved: column in both datasets, binary response assumed unchanged",
+        "AI_workforcenew1r2": "Approved: column in both datasets, binary response assumed unchanged",
+        "AI_workforcenew1r3": "Approved: column in both datasets, binary response assumed unchanged",
+        "AI_workforcenew1r4": "Approved: column in both datasets, binary response assumed unchanged",
+        "AI_workforcenew1r5": "Approved: column in both datasets, binary response assumed unchanged",
+        "AI_workforcenew1r6": "Approved: column in both datasets, binary response assumed unchanged",
+        "AI_workforcenew1r7": "Approved: column in both datasets, binary response assumed unchanged",
+        "AI_workforcenew1r8": "Approved: column in both datasets, binary response assumed unchanged",
+        "AI_workforcenew1r98": "Approved: column in both datasets, binary response assumed unchanged",
+        "Work_sentiment1r1": "Approved: column in both datasets, 7-point Likert scale assumed unchanged",
+        "Work_sentiment1r2": "Approved: column in both datasets, 7-point Likert scale assumed unchanged",
+        "Work_sentiment1r3": "Approved: column in both datasets, 7-point Likert scale assumed unchanged",
+        "Work_sentiment1r4": "Approved: column in both datasets, 7-point Likert scale assumed unchanged",
+        "Work_sentiment1r5": "Approved: column in both datasets, 7-point Likert scale assumed unchanged",
+        "Work_sentiment1r6": "Approved: column in both datasets, 7-point Likert scale assumed unchanged",
+        "techdigital12r1": "Approved: column in both datasets, 7-point Likert scale assumed unchanged",
+        "techdigital12r2": "Approved: column in both datasets, 7-point Likert scale assumed unchanged",
+        "techdigital12r3": "Approved: column in both datasets, 7-point Likert scale assumed unchanged",
+        "techdigital12r4": "Approved: column in both datasets, 7-point Likert scale assumed unchanged",
+        "techdigital12r5": "Approved: column in both datasets, 7-point Likert scale assumed unchanged",
+        "techdigital12r6": "Approved: column in both datasets, 7-point Likert scale assumed unchanged",
+        "techdigital12r7": "Approved: column in both datasets, 7-point Likert scale assumed unchanged",
+        "techdigital12r8": "Approved: column in both datasets, 7-point Likert scale assumed unchanged"
     },
-    "_candidates_for_review": {
-        "_note": "These variables are present in BOTH datasets but failed auto-matching because value labels are only documented on one side. The W33 Datamap only covers 144 of 564 raw columns, so many variables that are in both datasets simply lack W33 documentation. These are likely trendable if question wording is unchanged.",
-        "AI_consumer1 battery (10 items)": [
-            "AI_consumer1r1", "AI_consumer1r2", "AI_consumer1r3", "AI_consumer1r4",
-            "AI_consumer1r5", "AI_consumer1r6", "AI_consumer1r7", "AI_consumer1r8",
-            "AI_consumer1r9", "AI_consumer1r10"
-        ],
-        "AI_workforcenew1 battery (9 items)": [
-            "AI_workforcenew1r1", "AI_workforcenew1r2", "AI_workforcenew1r3",
-            "AI_workforcenew1r4", "AI_workforcenew1r5", "AI_workforcenew1r6",
-            "AI_workforcenew1r7", "AI_workforcenew1r8", "AI_workforcenew1r98"
-        ],
-        "Work_sentiment1 battery (6 items, 7-point scale)": [
-            "Work_sentiment1r1", "Work_sentiment1r2", "Work_sentiment1r3",
-            "Work_sentiment1r4", "Work_sentiment1r5", "Work_sentiment1r6"
-        ],
-        "techdigital12 battery (8 items, 7-point scale)": [
-            "techdigital12r1", "techdigital12r2", "techdigital12r3", "techdigital12r4",
-            "techdigital12r5", "techdigital12r6", "techdigital12r7", "techdigital12r8"
-        ],
-        "Demox1 battery (5 items)": [
-            "Demox1r1", "Demox1r2", "Demox1r3", "Demox1r4", "Demox1r5"
-        ],
-        "Age-derived variables (5 items)": [
-            "A1", "A1E90", "A1_25_to_75", "A1_GroupedNew", "A1over21"
-        ],
-        "Income-derived": [
-            "IncomeBracketW28New"
-        ],
-        "A6 race/ethnicity (response option added in W33)": [
-            "A6"
-        ]
+    "_not_approved": {
+        "A6": "Not approved: W33 added Hispanic or Latino as new response option. Variable not used."
     }
 }

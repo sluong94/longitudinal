@@ -441,25 +441,35 @@ class HarmonizationManifest:
         output_path: str | Path,
         labeling_vars: dict,
         w33_datamap: dict,
+        exclude_categories: Optional[set[str]] = None,
     ):
         """
         Export a human-readable review file for variables that need
         manual trendability decisions.
 
-        Shows side-by-side: historical value labels vs W33 value labels,
-        question text, and the reason the variable was not auto-approved.
+        Only includes actionable items by default (excludes open-ended,
+        QC flags, etc.). Shows side-by-side question text and value labels
+        with diff annotations.
+
+        Parameters
+        ----------
+        exclude_categories : set of category strings to exclude.
+            Defaults to {"OPEN_ENDED", "FLAG_DERIVED"}.
         """
+        if exclude_categories is None:
+            exclude_categories = {"OPEN_ENDED", "FLAG_DERIVED"}
+
         output_path = Path(output_path)
         pending = self.get_pending_review()
 
         fieldnames = [
             "variable",
             "question_family",
+            "question_text",
             "review_category",
+            "option_diff_note",
             "reason_blocked",
             "is_whitelisted",
-            "historical_question_text",
-            "w33_question_text",
             "historical_value_count",
             "w33_value_count",
             "historical_values",
@@ -477,8 +487,25 @@ class HarmonizationManifest:
 
                 h_vals = hist_defn.value_labels if hist_defn else {}
                 w_vals = w33_defn.value_labels if w33_defn else {}
-                h_text = hist_defn.question_text if hist_defn else ""
+
+                # Best available question text: prefer the one with actual
+                # descriptive text, not just the variable code
+                h_text = ""
+                if hist_defn:
+                    # Variable Name often has "A2: What is your gender?" format
+                    h_text = hist_defn.variable_name or ""
+                    # Description/Question Text may be more detailed
+                    if hist_defn.description and len(hist_defn.description) > len(h_text):
+                        h_text = hist_defn.description
                 w_text = w33_defn.description if w33_defn else ""
+
+                # Use the best text from either side
+                best_text = h_text or w_text or entry.canonical_question_text
+                # Clean up prefix like "A2: " if the variable name is included
+                if best_text.startswith(f"{entry.canonical_variable_id}: "):
+                    best_text = best_text[len(entry.canonical_variable_id) + 2:]
+                if best_text.startswith(f"[{entry.canonical_variable_id}]: "):
+                    best_text = best_text[len(entry.canonical_variable_id) + 4:]
 
                 # Classify the review category
                 is_oe = (
@@ -487,41 +514,88 @@ class HarmonizationManifest:
                     or len(h_vals) > 50
                     or len(w_vals) > 50
                 )
-                is_flag = "Flag" in entry.canonical_variable_id or "flag" in entry.canonical_variable_id
-                is_one_side_undoc = (
-                    (len(h_vals) == 0 and len(w_vals) > 0)
-                    or (len(h_vals) > 0 and len(w_vals) == 0)
-                    or (len(h_vals) == 0 and len(w_vals) == 0)
+                is_flag = (
+                    "Flag" in entry.canonical_variable_id
+                    or "flag" in entry.canonical_variable_id
                 )
 
                 if is_oe:
                     review_cat = "OPEN_ENDED"
-                    rec = "Not trendable (open-ended responses)"
                 elif is_flag:
                     review_cat = "FLAG_DERIVED"
-                    rec = "Likely not needed for dashboard display"
-                elif is_one_side_undoc:
-                    review_cat = "ONE_SIDE_UNDOCUMENTED"
-                    rec = "Column exists in both datasets but value labels only on one side. Likely trendable if question unchanged."
-                else:
+                elif len(h_vals) > 0 and len(w_vals) > 0:
                     review_cat = "CODED_RESPONSE_CHANGE"
-                    rec = "Response options changed between waves. Review if collapsible."
+                elif len(h_vals) == 0 and len(w_vals) == 0:
+                    review_cat = "BOTH_UNDOCUMENTED"
+                elif len(h_vals) > 0:
+                    review_cat = "LABELS_IN_HISTORICAL_ONLY"
+                else:
+                    review_cat = "LABELS_IN_W33_ONLY"
 
-                # Truncate open-ended values for readability
-                h_display = json.dumps(h_vals, ensure_ascii=False) if len(h_vals) <= 30 else f"({len(h_vals)} values, open-ended)"
-                w_display = json.dumps(w_vals, ensure_ascii=False) if len(w_vals) <= 30 else f"({len(w_vals)} values, open-ended)"
+                # Skip excluded categories
+                if review_cat in exclude_categories:
+                    continue
+
+                # Compute option diff annotation
+                option_diff = self._compute_option_diff(h_vals, w_vals)
+
+                # Recommendation
+                if review_cat == "CODED_RESPONSE_CHANGE":
+                    rec = "Response options changed. Review if collapsible or if difference is acceptable."
+                elif review_cat in ("LABELS_IN_HISTORICAL_ONLY", "LABELS_IN_W33_ONLY", "BOTH_UNDOCUMENTED"):
+                    rec = "Column in both datasets. Likely trendable — labels only documented on one side."
+                else:
+                    rec = ""
+
+                # Format value labels for display
+                h_display = json.dumps(h_vals, ensure_ascii=False) if len(h_vals) <= 30 else f"({len(h_vals)} values)"
+                w_display = json.dumps(w_vals, ensure_ascii=False) if len(w_vals) <= 30 else f"({len(w_vals)} values)"
 
                 writer.writerow({
                     "variable": entry.canonical_variable_id,
                     "question_family": entry.question_family,
+                    "question_text": best_text[:250],
                     "review_category": review_cat,
+                    "option_diff_note": option_diff,
                     "reason_blocked": entry.reason_not_trendable,
                     "is_whitelisted": entry.canonical_variable_id in self.trend_whitelist,
-                    "historical_question_text": h_text[:200],
-                    "w33_question_text": w_text[:200],
                     "historical_value_count": len(h_vals),
                     "w33_value_count": len(w_vals),
                     "historical_values": h_display,
                     "w33_values": w_display,
                     "recommendation": rec,
                 })
+
+    @staticmethod
+    def _compute_option_diff(
+        hist_vals: dict[str, str], w33_vals: dict[str, str]
+    ) -> str:
+        """Describe differences between two sets of value labels."""
+        if not hist_vals and not w33_vals:
+            return "Both sides undocumented"
+        if not hist_vals:
+            return "No historical labels (W33 has labels)"
+        if not w33_vals:
+            return "No W33 labels (historical has labels)"
+
+        hist_set = set(hist_vals.items())
+        w33_set = set(w33_vals.items())
+
+        if hist_set == w33_set:
+            return "Identical options"
+
+        added = dict(w33_set - hist_set)
+        removed = dict(hist_set - w33_set)
+        parts = []
+        if added:
+            added_summary = "; ".join(f"{k}={v}" for k, v in sorted(added.items())[:5])
+            parts.append(f"W33 added: {added_summary}")
+        if removed:
+            removed_summary = "; ".join(f"{k}={v}" for k, v in sorted(removed.items())[:5])
+            parts.append(f"W33 removed: {removed_summary}")
+
+        count_diff = len(w33_vals) - len(hist_vals)
+        if count_diff != 0:
+            parts.append(f"Option count: {len(hist_vals)} -> {len(w33_vals)}")
+
+        return " | ".join(parts) if parts else "Differences detected"

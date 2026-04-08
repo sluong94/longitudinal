@@ -53,11 +53,19 @@ def load_manifest_summary():
 
 @st.cache_data
 def load_w33_raw():
+    """Load W33 data — prefers Parquet (fast), falls back to Excel (sample)."""
+    parquet_path = DATA_DIR / "data" / "w33_full.parquet"
+    if parquet_path.exists():
+        return pd.read_parquet(parquet_path)
     return pd.read_excel(DATA_DIR / "Sample data file W33.xlsx", sheet_name="A1")
 
 
 @st.cache_data
 def load_longitudinal_sample():
+    """Load longitudinal data — prefers Parquet (fast), falls back to Excel (sample)."""
+    parquet_path = DATA_DIR / "data" / "longitudinal_full.parquet"
+    if parquet_path.exists():
+        return pd.read_parquet(parquet_path)
     return pd.read_excel(DATA_DIR / "Longitudinal_Dataset_Sample.xlsx")
 
 
