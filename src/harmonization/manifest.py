@@ -83,11 +83,20 @@ class HarmonizationManifest:
     The manifest is built by comparing the variable registry
     (which combines labeling workbook + W33 datamap) and applying
     strict trendability rules.
+
+    Supports a whitelist for manually approved trendable variables
+    that would otherwise fail strict matching (e.g., variables present
+    in both datasets but only documented on one side).
     """
 
-    def __init__(self, variable_registry: VariableRegistry):
+    def __init__(
+        self,
+        variable_registry: VariableRegistry,
+        trend_whitelist: Optional[set[str]] = None,
+    ):
         self.registry = variable_registry
         self._entries: list[ManifestEntry] = []
+        self.trend_whitelist = trend_whitelist or set()
 
     def build(
         self,
@@ -271,37 +280,49 @@ class HarmonizationManifest:
 
         A variable is trendable ONLY if:
         1. Present in both historical and latest wave
-        2. Exact match on response options
+        2. Exact match on response options (or whitelisted)
         3. Not an excluded category
         4. Not hidden/derived (unless whitelisted)
         5. Not open-ended
+
+        Variables in the trend_whitelist bypass rules 2 and 4
+        (value-match strictness) but still must be present in both
+        datasets and not in excluded categories.
         """
-        # Rule 1: Must be present in both
+        is_whitelisted = var.canonical_id in self.trend_whitelist
+
+        # Rule 1: Must be present in both (no whitelist bypass)
         if exact_match_status in (
             ExactMatchStatus.LATEST_WAVE_ONLY,
             ExactMatchStatus.HISTORICAL_ONLY,
         ):
             return False, REASON_CODES.get(match_reason, match_reason)
 
-        # Rule 2: Must be excluded categories
+        # Rule 2: Excluded categories cannot be whitelisted
         if exact_match_status == ExactMatchStatus.EXCLUDED:
             return False, REASON_CODES["admin_excluded"]
 
         # Rule 3: Hidden/derived must be whitelisted
-        if var.category == VariableCategory.HIDDEN and not var.whitelist_override:
+        if var.category == VariableCategory.HIDDEN and not var.whitelist_override and not is_whitelisted:
             return False, REASON_CODES["hidden_not_whitelisted"]
 
-        # Rule 4: Values must match exactly
+        # Rule 4: Values must match exactly — OR be whitelisted
         if exact_match_status == ExactMatchStatus.NAME_MATCH_VALUES_DIFFER:
+            if is_whitelisted:
+                return True, "Whitelisted: manual approval overrides value-match check"
             return False, REASON_CODES["values_differ"]
 
-        # Rule 5: Open-ended not trendable
+        # Rule 5: Open-ended not trendable (no whitelist bypass)
         if var.question_type.value in ("text_open",):
             return False, REASON_CODES["open_ended"]
 
         # Rule 6: Must be exact match
         if exact_match_status == ExactMatchStatus.EXACT_MATCH:
             return True, REASON_CODES["exact_match"]
+
+        # Whitelist catch-all for NOT_ASSESSED variables present in both
+        if is_whitelisted and var.in_historical and var.in_latest_wave:
+            return True, "Whitelisted: manual approval"
 
         # Default: not eligible
         return False, REASON_CODES.get(match_reason, "Unknown reason")
@@ -404,3 +425,103 @@ class HarmonizationManifest:
 
         with open(output_path, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, ensure_ascii=False)
+
+    def get_pending_review(self) -> list[ManifestEntry]:
+        """Variables present in both datasets but not yet trendable.
+        These are the candidates for whitelist review."""
+        return [
+            e for e in self._entries
+            if e.historical_present and e.latest_wave_present
+            and not e.trend_eligible
+            and e.exact_match_status != ExactMatchStatus.EXCLUDED
+        ]
+
+    def export_review_csv(
+        self,
+        output_path: str | Path,
+        labeling_vars: dict,
+        w33_datamap: dict,
+    ):
+        """
+        Export a human-readable review file for variables that need
+        manual trendability decisions.
+
+        Shows side-by-side: historical value labels vs W33 value labels,
+        question text, and the reason the variable was not auto-approved.
+        """
+        output_path = Path(output_path)
+        pending = self.get_pending_review()
+
+        fieldnames = [
+            "variable",
+            "question_family",
+            "review_category",
+            "reason_blocked",
+            "is_whitelisted",
+            "historical_question_text",
+            "w33_question_text",
+            "historical_value_count",
+            "w33_value_count",
+            "historical_values",
+            "w33_values",
+            "recommendation",
+        ]
+
+        with open(output_path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+
+            for entry in sorted(pending, key=lambda e: e.question_family):
+                hist_defn = labeling_vars.get(entry.canonical_variable_id)
+                w33_defn = w33_datamap.get(entry.canonical_variable_id)
+
+                h_vals = hist_defn.value_labels if hist_defn else {}
+                w_vals = w33_defn.value_labels if w33_defn else {}
+                h_text = hist_defn.question_text if hist_defn else ""
+                w_text = w33_defn.description if w33_defn else ""
+
+                # Classify the review category
+                is_oe = (
+                    entry.canonical_variable_id.endswith("oe")
+                    or entry.canonical_variable_id.endswith("_OE")
+                    or len(h_vals) > 50
+                    or len(w_vals) > 50
+                )
+                is_flag = "Flag" in entry.canonical_variable_id or "flag" in entry.canonical_variable_id
+                is_one_side_undoc = (
+                    (len(h_vals) == 0 and len(w_vals) > 0)
+                    or (len(h_vals) > 0 and len(w_vals) == 0)
+                    or (len(h_vals) == 0 and len(w_vals) == 0)
+                )
+
+                if is_oe:
+                    review_cat = "OPEN_ENDED"
+                    rec = "Not trendable (open-ended responses)"
+                elif is_flag:
+                    review_cat = "FLAG_DERIVED"
+                    rec = "Likely not needed for dashboard display"
+                elif is_one_side_undoc:
+                    review_cat = "ONE_SIDE_UNDOCUMENTED"
+                    rec = "Column exists in both datasets but value labels only on one side. Likely trendable if question unchanged."
+                else:
+                    review_cat = "CODED_RESPONSE_CHANGE"
+                    rec = "Response options changed between waves. Review if collapsible."
+
+                # Truncate open-ended values for readability
+                h_display = json.dumps(h_vals, ensure_ascii=False) if len(h_vals) <= 30 else f"({len(h_vals)} values, open-ended)"
+                w_display = json.dumps(w_vals, ensure_ascii=False) if len(w_vals) <= 30 else f"({len(w_vals)} values, open-ended)"
+
+                writer.writerow({
+                    "variable": entry.canonical_variable_id,
+                    "question_family": entry.question_family,
+                    "review_category": review_cat,
+                    "reason_blocked": entry.reason_not_trendable,
+                    "is_whitelisted": entry.canonical_variable_id in self.trend_whitelist,
+                    "historical_question_text": h_text[:200],
+                    "w33_question_text": w_text[:200],
+                    "historical_value_count": len(h_vals),
+                    "w33_value_count": len(w_vals),
+                    "historical_values": h_display,
+                    "w33_values": w_display,
+                    "recommendation": rec,
+                })
