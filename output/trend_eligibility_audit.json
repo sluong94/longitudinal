@@ -1,0 +1,17 @@
+{
+  "total": 1814,
+  "trend_eligible": 19,
+  "rule_failures": {
+    "not_excluded": 90,
+    "display_eligible": 119,
+    "present_in_both": 1725,
+    "exact_match": 1793,
+    "not_open_ended": 13
+  },
+  "first_failure_distribution": {
+    "present_in_both": 1616,
+    "exact_match": 60,
+    "display_eligible": 29,
+    "not_excluded": 90
+  }
+}
