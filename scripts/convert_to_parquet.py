@@ -60,6 +60,23 @@ def convert_excel_to_parquet(
     df = pd.read_excel(excel_path, sheet_name=sheet_name)
     print(f"  Shape: {df.shape[0]:,} rows x {df.shape[1]:,} columns")
 
+    # Fix mixed-type columns: survey data often has columns where most
+    # values are numeric but some cells contain text (e.g., open-ended
+    # responses like A2r98oe). PyArrow requires consistent types.
+    mixed_cols = []
+    for col in df.columns:
+        if df[col].dtype == object:
+            # Check if it's truly mixed (has both numbers and strings)
+            has_num = df[col].apply(lambda x: isinstance(x, (int, float))).any()
+            has_str = df[col].apply(lambda x: isinstance(x, str)).any()
+            if has_num and has_str:
+                mixed_cols.append(col)
+                df[col] = df[col].astype(str).replace("nan", pd.NA)
+            elif has_str:
+                df[col] = df[col].astype(str).replace("nan", pd.NA)
+    if mixed_cols:
+        print(f"  Fixed {len(mixed_cols)} mixed-type columns (converted to string)")
+
     output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(output_path, index=False, engine="pyarrow")
 
